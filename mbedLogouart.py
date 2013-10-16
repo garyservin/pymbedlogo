@@ -1,138 +1,111 @@
 #!/usr/bin/python
 
 import serial
-import binascii
+
+eSector = 0x0e
+e = 0xe000
+g = 0x2007c000
+
+def read(mbed, count):
+    if count == 1:
+	return ord(mbed.read())
+    else:
+        response = []
+        for i in range(count):
+            response.append(ord(mbed.read()))
+        return response
+
+def write(mbed, data):
+    mbed.write(chr(data & 0xff))
+
+def write16(mbed, data):
+    for i in range(2):
+        mbed.write(chr(data & 0xff))
+        data = data / 256
+
+def write32(mbed, data):
+    for i in range(4):
+        mbed.write(chr(data & 0xff))
+        data = data / 256
 
 def testCommunication(mbed):
-	mbed.write("\xff")
+    write(mbed, 0xff)
+    return read(mbed, 1)
+
+def readMemory(mbed, address, count):
+    write(mbed, 0xfe)		# Send the read memory opcode
+    write32(mbed, address)	# Send the 32 bits start address (4 bytes)
+    write16(mbed, count)	# Send how many bytes we want to read (2 bytes)
+    return read(mbed, count)	# Read the number of bytes from the device
+
+def writeMemory(mbed, address, count, data):
+    write(mbed, 0xfd)		# Send the write memory opcode
+    write32(mbed, address)	# Send the 32 bits destination address (4 bytes)
+    write16(mbed, count)	# Send how many bytes we want to write (2 bytes)
+    for i in range(len(data)):	# Write data
+        write(mbed, data[i])
+    return 0
 	
-	response = []
-	for i in range(1):
-		response.append(mbed.read())
-	return response
-
-
-def readMemory(mbed, startAddress, bytesCount):
-	
-	# Copy received variables to modify them
-	address = startAddress
-	count = bytesCount
-
-	# Send the read memory opcode
-	mbed.write("\xfe")
-
-	# Send the 32 bits start address (4 bytes)
-	for i in range(4):
-		tmp = address & 0xff
-		address = address / 256
-		mbed.write(chr(tmp))
-
-	# Send how many bytes we want to read (2 bytes)
-	for i in range(2):
-		tmp = count & 0xff
-		count = count / 256
-		mbed.write(chr(tmp))
-
-	# Read the number of bytes from the device
-	response = []
-	for i in range(bytesCount):
-		response.append(mbed.read())
-	return response
-
-def writeMemory(mbed, destinationAddress, bytesCount, data):
-	
-	# Copy received variables to modify them
-	address = destinationAddress
-	count = bytesCount
-	
-	# Send the write memory opcode
-	mbed.write("\xfd")
-
-	# Send the 32 bits destination address (4 bytes)
-	for i in range(4):
-		tmp = address & 0xff
-		address = address / 256
-		mbed.write(chr(tmp))
-
-	# Send how many bytes we want to write (2 bytes)
-	for i in range(2):
-		tmp = count & 0xff
-		count = count / 256
-		mbed.write(chr(tmp))
-
-	# Write the data
-	for i in range(len(data)):
-		mbed.write(data[i])
-	
-	return 0
-	
-def writeFlash(mbed, destinationSector, destinationAddress, bytesCount, data):
-	# Copy received variables to modify them
-	sector = destinationSector
-	address = destinationAddress
-	count = bytesCount
-	
-	# Send the write flash opcode
-	mbed.write("\xfb")
-
-	# Send the sector to write
-	mbed.write(chr(sector))
-	
-	# Send the 32 bits destination address (4 bytes)
-	for i in range(4):
-		tmp = address & 0xff
-		address = address / 256
-		mbed.write(chr(tmp))
-
-	# Send how many bytes we want to write (1 byte)
-	mbed.write(chr(count & 0xff))
-
-	# Write the data
-	for i in range(len(data)):
-		mbed.write(data[i])
-	
-	return mbed.read()
+def writeFlash(mbed, sector, address, count, data):
+    write(mbed, 0xfb)		# Send the write flash opcode
+    write(mbed, sector)		# Send the sector to write
+    write32(mbed, address)	# Send the 32 bits destination address (4 bytes)
+    write(mbed, count)		# Send how many bytes we want to write (1 byte)
+    for i in range(len(data)):	# Write data
+        write(mbed, data[i])
+    return read(mbed, 1)
 
 def eraseFlash(mbed, sector):
-	# Send the erase flash opcode
-	mbed.write("\xfa")
+    write(mbed, 0xfa)		# Send the erase flash opcode
+    write(mbed, sector)		# Send the sector to write
+    return read(mbed, 1)
 
-	# Send the sector to write
-	mbed.write(chr(sector))
-	
-	return mbed.read()
+def runCommand(mbed, command):
+    eraseFlash(mbed, eSector)	# Erase flash sector
+    writeFlash(mbed, eSector, e, len(command), command)	# Write command to flash
+    write(mbed, 0xfc)		# Send the run opcode
 
-
-sectorFlash = 0x0E
-addressFlash = 0x0000E000
-addressMemory = 0x2007C000
-data = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
+data = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57]
 
 mbed = serial.Serial("/dev/ttyACM0", baudrate=9600, timeout=3.0)
 
-print "Testing communication"
+print "Testing communication...",
 print testCommunication(mbed)
 
-## Working with Memory
-print "Reading %d bytes from 0x%0X (Memory)" % (len(data),addressMemory)
-print readMemory(mbed, addressMemory, len(data))
+### Working with Memory
+#print "Reading %d bytes from 0x%0X (Memory)" % (len(data), g)
+#print readMemory(mbed, g, len(data))
+#print ' '
+#
+#print "Writing %d bytes in 0x%0X (Memory)" % (len(data), g)
+#print writeMemory(mbed, g, len(data), data )
+#print ' '
+#
+#print "Reading %d bytes from 0x%0X (Memory)" % (len(data), g)
+#print readMemory(mbed, g, len(data))
+#print ' '
+#
+#print ' '
+### Working with Flash
+#print "Reading %d bytes from 0x%0X (FLASH)" % (len(data), e)
+#print readMemory(mbed, e, len(data))
+#print ' '
+#
+#print "Erasing flash"
+#print eraseFlash(mbed, eSector)
+#print ' '
+#
+#print "Writing %d bytes in 0x%0X (FLASH)" % (len(data), e)
+#print writeFlash(mbed, eSector, e, len(data), data)
+#print ' '
+#
+#print "Reading %d bytes from 0x%0X (FLASH)" % (len(data), e)
+#print readMemory(mbed, e, len(data))
 
-print "Writing %d bytes in 0x%0X (Memory)" % (len(data),addressMemory)
-print writeMemory(mbed, addressMemory, len(data), data )
+command1 = [1, 45, 10, 9, 0]
+runCommand(mbed, command1)
+print read(mbed, 4)
 
-print "Reading %d bytes from 0x%0X (Memory)" % (len(data),addressMemory)
-print readMemory(mbed, addressMemory, len(data))
-
-
-## Working with Flash
-print "Reading %d bytes from 0x%0X (FLASH)" % (len(data),addressFlash)
-print readMemory(mbed, addressFlash, len(data))
-
-print "Erasing flash"
-print binascii.b2a_hex(eraseFlash(mbed, sectorFlash))
-
-print "Writing %d bytes in 0x%0X (FLASH)" % (len(data),addressFlash)
-print binascii.b2a_hex(writeFlash(mbed, sectorFlash, addressFlash, len(data), data))
-
-print "Reading %d bytes from 0x%0X (FLASH)" % (len(data),addressFlash)
-print readMemory(mbed, addressFlash, len(data))
+command2 = [1, 4, 3, 5, 0, 1, 12, 10, 9, 4, 17, 0]
+runCommand(mbed, command2)
+print read(mbed, 13)
